@@ -3,14 +3,14 @@ import type { Core } from '@strapi/strapi';
 
 const feedController = ({ strapi }: { strapi: Core.Strapi }) => ({
   async getFeed(ctx: Context) {
-    const { page = 1, pageSize = 10, fields, populate } = ctx.query;
+    const { page = 1, pageSize = 10, fields, populate, filters } = ctx.query;
 
     try {
       // Parse advanced population dynamically
       const populateParams = populate ? parseAdvancedPopulate(populate) : undefined;
 
-      // Debugging the parsed populate
-      console.log('Parsed Populate Params:', JSON.stringify(populateParams, null, 2));
+      // Log filters for debugging
+      console.log('Filters:', filters);
 
       // Call the service to fetch feed items
       const feedService = strapi.plugin('broadcast-feed').service('service');
@@ -18,7 +18,8 @@ const feedController = ({ strapi }: { strapi: Core.Strapi }) => ({
         parseInt(page as string, 10),
         parseInt(pageSize as string, 10),
         fields as string,
-        populateParams
+        populateParams,
+        filters as any // Pass filters to the service
       );
 
       // Send the response
@@ -38,7 +39,7 @@ const parseAdvancedPopulate = (populate: any): Record<string, any> => {
       let currentLevel = acc;
       keys.forEach((key, index) => {
         if (!currentLevel[key]) {
-          currentLevel[key] = index === keys.length - 1 ? true : {}; // Replace "url" with `true`
+          currentLevel[key] = index === keys.length - 1 ? true : {};
         }
         currentLevel = currentLevel[key];
       });

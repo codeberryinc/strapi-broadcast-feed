@@ -2,18 +2,30 @@ import type { Core } from '@strapi/strapi';
 import { BroadcastFeedConfig, FeedItem } from '../types'; // Import shared types
 
 const service = ({ strapi }: { strapi: Core.Strapi }) => ({
-  async fetchFeedItems(page = 1, pageSize = 10, fields?: string, populate?: Record<string, any>) {
-    const config = strapi.config.get('plugin.broadcast-feed') as BroadcastFeedConfig;
+  async fetchFeedItems(
+    page = 1,
+    pageSize = 10,
+    fields?: string,
+    populate?: Record<string, any>,
+    filters?: Record<string, any> // Add filters here
+  ) {
+    const config = strapi.config.get('plugin::broadcast-feed') as BroadcastFeedConfig;
     const { collections } = config.feed;
 
     try {
+      // Ensure filters always include a condition for published items
+      const combinedFilters = {
+        ...filters, // User-defined filters
+        publishedAt: { $notNull: true }, // Enforce published filter
+      };
+
       const results: FeedItem[][] = await Promise.all(
         collections.map(
           ({ uid }) =>
             strapi.db.query(uid).findMany({
-              where: { publishedAt: { $notNull: true } },
+              where: combinedFilters, // Apply filters here
               orderBy: { publishedAt: 'desc' },
-              populate, // Use the parsed populate structure
+              populate, // Pass parsed populate structure
             }) as Promise<FeedItem[]>
         )
       );
@@ -21,6 +33,7 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => ({
       const combinedFeed: FeedItem[] = results.flatMap((items, index) =>
         items.map((item) => ({
           ...item,
+          documentId: item.documentId, // Use documentId here
           collectionType: collections[index].uid.split('::')[1].split('.')[0],
         }))
       );
@@ -30,12 +43,12 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => ({
         (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
       );
 
-      // Format the feed and populate fields dynamically
+      // Format the feed and include fields dynamically
       const formattedFeed = await Promise.all(
         combinedFeed.map(async (entry) => {
-          const response: Record<string, any> = { id: entry.id };
+          const response: Record<string, any> = { documentId: entry.documentId }; // Use documentId
 
-          // Dynamically include requested fields
+          // Include requested fields
           if (fields) {
             const selectedFields = fields.split(',');
             selectedFields.forEach((field) => {
@@ -54,16 +67,11 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => ({
             const fullEntry = await strapi.db
               .query(`api::${entry.collectionType}.${entry.collectionType}`)
               .findOne({
-                where: { id: entry.id },
+                where: { documentId: entry.documentId }, // Use documentId in query
                 populate,
               });
 
-            console.log('Full Entry with Populated Data:', JSON.stringify(fullEntry, null, 2));
-
-            const extractedFields = extractNestedFields(fullEntry, populate);
-            console.log('Extracted Fields:', JSON.stringify(extractedFields, null, 2));
-
-            Object.assign(response, extractedFields);
+            Object.assign(response, extractNestedFields(fullEntry, populate));
           }
 
           return response;
@@ -101,33 +109,23 @@ const extractNestedFields = (
 ): Record<string, any> => {
   const result: Record<string, any> = {};
 
-  console.log('Extract Nested Fields - Entry:', JSON.stringify(entry, null, 2));
-  console.log('Extract Nested Fields - Populate Params:', JSON.stringify(populateParams, null, 2));
-
   Object.keys(populateParams).forEach((field) => {
     if (field === 'populate') {
       // Skip over the "populate" key and directly process its children
-      console.log('Skipping "populate" key to process nested fields');
       Object.assign(result, extractNestedFields(entry, populateParams[field]));
       return;
     }
 
     if (entry && entry[field] !== undefined) {
-      console.log(`Processing Field: ${field}`);
       const nestedParams = populateParams[field];
 
       if (typeof nestedParams === 'object' && Object.keys(nestedParams).length > 0) {
-        console.log(`Recursively Processing Nested Field: ${field}`);
         result[field] = extractNestedFields(entry[field], nestedParams);
       } else {
-        console.log(`Directly Assigning Field: ${field}`);
         result[field] = entry[field];
       }
-    } else {
-      console.log(`Field ${field} is Missing in Entry`);
     }
   });
 
-  console.log('Extract Nested Fields - Result:', JSON.stringify(result, null, 2));
   return result;
 };
