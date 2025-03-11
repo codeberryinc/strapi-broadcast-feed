@@ -39,7 +39,7 @@ const parseAdvancedPopulate = (populate: any): Record<string, any> => {
       let currentLevel = acc;
       keys.forEach((key, index) => {
         if (!currentLevel[key]) {
-          currentLevel[key] = index === keys.length - 1 ? true : {};
+          currentLevel[key] = index === keys.length - 1 ? true : {}; // Replace "url" with `true`
         }
         currentLevel = currentLevel[key];
       });
